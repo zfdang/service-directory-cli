@@ -91,6 +91,11 @@ enum Commands {
         #[command(subcommand)]
         cmd: AdminCmd,
     },
+    /// /me self-service (sessions, agent tokens).
+    Me {
+        #[command(subcommand)]
+        cmd: MeCmd,
+    },
     /// Generate shell completions.
     Completions { shell: Shell },
 }
@@ -258,6 +263,42 @@ enum AdminCmd {
     },
     /// Ranking weights.
     RankingWeights,
+    /// Manager invitations.
+    Managers {
+        #[command(subcommand)]
+        cmd: ManagersCmd,
+    },
+    /// Force-verify a descriptor (manager+, requires step-up).
+    ForceVerify {
+        provider_id: String,
+        #[arg(long)]
+        reason: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum ManagersCmd {
+    Invite {
+        #[arg(long)]
+        email: String,
+    },
+    List {
+        #[arg(long)]
+        status: Option<String>,
+    },
+    Revoke { invitation_id: String },
+}
+
+#[derive(Subcommand)]
+enum MeCmd {
+    /// List browser sessions.
+    Sessions,
+    /// Revoke one of my browser sessions.
+    RevokeSession { session_id: String },
+    /// List agent tokens issued via device-flow.
+    Tokens,
+    /// Revoke an agent token.
+    RevokeToken { token_id: String },
 }
 
 fn build_client(cli: &Cli) -> anyhow::Result<(Client, config::CredentialsFile, config::Profile)> {
@@ -506,6 +547,61 @@ async fn main() -> anyhow::Result<()> {
             }
             AdminCmd::Audit { after_seq, limit } => client.admin_audit(after_seq, limit).await?,
             AdminCmd::RankingWeights => client.admin_ranking_weights().await?,
+            AdminCmd::Managers { cmd } => match cmd {
+                ManagersCmd::Invite { email } => {
+                    if dry_run {
+                        serde_json::json!({"dry_run": true, "email": email})
+                    } else {
+                        // Mint stepup, then attach to a fresh client.
+                        let su = client.auth_stepup().await?;
+                        let stepup_token = su
+                            .get("stepup_token")
+                            .and_then(|v| v.as_str())
+                            .ok_or_else(|| anyhow::anyhow!("missing stepup_token"))?;
+                        let su_client = client.clone().with_stepup(stepup_token);
+                        su_client.admin_invite_manager(&email).await?
+                    }
+                }
+                ManagersCmd::List { status } => {
+                    client.admin_list_manager_invitations(status.as_deref()).await?
+                }
+                ManagersCmd::Revoke { invitation_id } => {
+                    let su = client.auth_stepup().await?;
+                    let stepup_token = su
+                        .get("stepup_token")
+                        .and_then(|v| v.as_str())
+                        .ok_or_else(|| anyhow::anyhow!("missing stepup_token"))?;
+                    let su_client = client.clone().with_stepup(stepup_token);
+                    su_client
+                        .admin_revoke_manager_invitation(&invitation_id)
+                        .await?
+                }
+            },
+            AdminCmd::ForceVerify { provider_id, reason } => {
+                let su = client.auth_stepup().await?;
+                let stepup_token = su
+                    .get("stepup_token")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| anyhow::anyhow!("missing stepup_token"))?;
+                let su_client = client.clone().with_stepup(stepup_token);
+                if dry_run {
+                    serde_json::json!({"dry_run": true, "provider_id": provider_id, "reason": reason})
+                } else {
+                    su_client.force_verify_descriptor(&provider_id, &reason).await?
+                }
+            }
+        },
+        Commands::Me { cmd } => match cmd {
+            MeCmd::Sessions => client.list_my_sessions().await?,
+            MeCmd::RevokeSession { session_id } => {
+                client.revoke_my_session(&session_id).await?;
+                serde_json::json!({"revoked": session_id})
+            }
+            MeCmd::Tokens => client.list_my_agent_tokens().await?,
+            MeCmd::RevokeToken { token_id } => {
+                client.revoke_my_agent_token(&token_id).await?;
+                serde_json::json!({"revoked": token_id})
+            }
         },
         Commands::Completions { .. } => unreachable!(),
     };
