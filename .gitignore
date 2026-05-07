@@ -1,6 +1,9 @@
 /target
 **/*.rs.bk
 
+# OMC tool data
+.omc/
+
 .env
 .env.local
 

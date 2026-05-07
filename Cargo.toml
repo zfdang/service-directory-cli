@@ -1,0 +1,22 @@
+[package]
+name = "service-directory-cli"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Rust CLI for Kite Service Directory; user-facing binary kitedir."
+
+[[bin]]
+name = "kitedir"
+path = "src/main.rs"
+
+[dependencies]
+service_directory_client = { path = "../service-directory-backend/crates/service_directory_client" }
+service_directory_schemas = { path = "../service-directory-backend/crates/service_directory_schemas" }
+clap = { version = "4", features = ["derive", "env"] }
+anyhow = "1"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+url = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

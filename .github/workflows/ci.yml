@@ -1,0 +1,29 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: service-directory-cli
+      - uses: actions/checkout@v4
+        with:
+          repository: zfdang/service-directory-backend
+          path: service-directory-backend
+      - uses: dtolnay/rust-toolchain@1.81
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: fmt
+        working-directory: service-directory-cli
+        run: cargo fmt --all -- --check
+      - name: clippy
+        working-directory: service-directory-cli
+        run: cargo clippy --all-targets -- -D warnings
+      - name: test
+        working-directory: service-directory-cli
+        run: cargo test --all
