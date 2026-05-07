@@ -4,7 +4,7 @@ on:
     branches: [main]
   pull_request:
 jobs:
-  rust:
+  fmt:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -17,14 +17,50 @@ jobs:
           token: ${{ secrets.SERVICE_DIRECTORY_BACKEND_READ_TOKEN }}
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: rustfmt
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: service-directory-cli -> service-directory-cli/target
       - name: fmt
         working-directory: service-directory-cli
         run: cargo fmt --all -- --check
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: service-directory-cli
+      - uses: actions/checkout@v5
+        with:
+          repository: zfdang/service-directory-backend
+          path: service-directory-backend
+          token: ${{ secrets.SERVICE_DIRECTORY_BACKEND_READ_TOKEN }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: service-directory-cli -> service-directory-cli/target
       - name: clippy
         working-directory: service-directory-cli
         run: cargo clippy --all-targets -- -D warnings
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: service-directory-cli
+      - uses: actions/checkout@v5
+        with:
+          repository: zfdang/service-directory-backend
+          path: service-directory-backend
+          token: ${{ secrets.SERVICE_DIRECTORY_BACKEND_READ_TOKEN }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: service-directory-cli -> service-directory-cli/target
       - name: test
         working-directory: service-directory-cli
         run: cargo test --all
