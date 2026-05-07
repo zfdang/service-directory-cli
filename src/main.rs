@@ -9,7 +9,11 @@ use clap::{Parser, Subcommand};
 )]
 struct Cli {
     /// Service Directory base URL (e.g. https://dir.kitepass.xyz)
-    #[arg(long, env = "KITEDIR_BASE_URL", default_value = "http://localhost:8080")]
+    #[arg(
+        long,
+        env = "KITEDIR_BASE_URL",
+        default_value = "http://localhost:8080"
+    )]
     base_url: url::Url,
 
     /// Profile name in ~/.config/kite/directory/credentials.toml
@@ -176,7 +180,10 @@ async fn main() -> anyhow::Result<()> {
         }
         other => {
             let stub = stub_name(&other);
-            anyhow::bail!("`{stub}` not yet implemented in Phase 0; profile={}", cli.profile);
+            anyhow::bail!(
+                "`{stub}` not yet implemented in Phase 0; profile={}",
+                cli.profile
+            );
         }
     }
     Ok(())
