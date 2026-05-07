@@ -14,6 +14,7 @@ jobs:
         with:
           repository: zfdang/service-directory-backend
           path: service-directory-backend
+          token: ${{ secrets.SERVICE_DIRECTORY_BACKEND_READ_TOKEN }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
