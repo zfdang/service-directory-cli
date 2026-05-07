@@ -1,4 +1,6 @@
+use anyhow::Context;
 use clap::{Parser, Subcommand};
+use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(
@@ -12,7 +14,7 @@ struct Cli {
     #[arg(
         long,
         env = "KITEDIR_BASE_URL",
-        default_value = "http://localhost:8080"
+        default_value = "https://dir.kitepass.xyz"
     )]
     base_url: url::Url,
 
@@ -20,15 +22,15 @@ struct Cli {
     #[arg(long, env = "KITEDIR_PROFILE", default_value = "default")]
     profile: String,
 
-    /// Emit machine-readable JSON
+    /// Emit machine-readable JSON.
     #[arg(long, global = true)]
     json: bool,
 
-    /// Disable ANSI color
+    /// Disable ANSI color (currently unused).
     #[arg(long, global = true)]
     no_color: bool,
 
-    /// Refuse to prompt for input
+    /// Refuse to prompt for input (currently unused; CLI is non-interactive in Phase 1).
     #[arg(long, global = true)]
     non_interactive: bool,
 
@@ -38,7 +40,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Print API version (Phase 0 smoke).
+    /// Print API version and connectivity status.
     Version,
     /// Provider operations.
     Providers {
@@ -50,111 +52,33 @@ enum Commands {
         #[command(subcommand)]
         cmd: DescriptorCmd,
     },
-    /// Comments.
-    Comments {
-        #[command(subcommand)]
-        cmd: CrudCmd,
-    },
-    /// Ratings.
-    Ratings {
-        #[command(subcommand)]
-        cmd: CrudCmd,
-    },
-    /// Evaluations (combined comment+rating).
-    Evaluations {
-        #[command(subcommand)]
-        cmd: CrudCmd,
-    },
-    /// Authentication.
-    Auth {
-        #[command(subcommand)]
-        cmd: AuthCmd,
-    },
-    /// Moderation operations.
-    Moderation {
-        #[command(subcommand)]
-        cmd: ModerationCmd,
-    },
-    /// Admin operations.
-    Admin {
-        #[command(subcommand)]
-        cmd: AdminCmd,
-    },
-    /// Shell completions.
-    Completions {
-        #[arg(value_enum)]
-        shell: clap_complete_shell::Shell,
-    },
 }
 
 #[derive(Subcommand)]
 enum ProviderCmd {
+    /// List or full-text search providers.
     Search {
         #[arg(long)]
         q: Option<String>,
+        #[arg(long, default_value_t = 25)]
+        limit: i64,
+        #[arg(long, default_value_t = 0)]
+        offset: i64,
     },
-    Get {
-        provider_id: String,
-    },
-    Submit {
-        path_or_url: String,
-    },
+    /// Show one provider.
+    Get { provider_id: String },
 }
 
 #[derive(Subcommand)]
 enum DescriptorCmd {
-    Validate { path_or_url: String },
-}
-
-#[derive(Subcommand)]
-enum CrudCmd {
-    Add { provider_id: String },
-    List { provider_id: String },
-}
-
-#[derive(Subcommand)]
-enum AuthCmd {
-    DeviceFlow {
-        #[command(subcommand)]
-        cmd: DeviceFlowCmd,
+    /// Locally validate a descriptor JSON file (signature, slug rules, pricing_ref hash format).
+    Validate { path: PathBuf },
+    /// Fetch the current descriptor for a provider from the directory API.
+    Get {
+        provider_id: String,
+        #[arg(long)]
+        version: Option<i32>,
     },
-}
-
-#[derive(Subcommand)]
-enum DeviceFlowCmd {
-    Start,
-    Poll { device_code: String },
-}
-
-#[derive(Subcommand)]
-enum ModerationCmd {
-    List,
-    Hide {
-        target_type: String,
-        target_id: String,
-    },
-}
-
-#[derive(Subcommand)]
-enum AdminCmd {
-    Managers {
-        #[command(subcommand)]
-        cmd: ManagerCmd,
-    },
-}
-
-#[derive(Subcommand)]
-enum ManagerCmd {
-    Invite { email_or_account: String },
-}
-
-mod clap_complete_shell {
-    #[derive(clap::ValueEnum, Clone, Copy, Debug)]
-    pub enum Shell {
-        Bash,
-        Zsh,
-        Fish,
-    }
 }
 
 #[tokio::main]
@@ -169,37 +93,59 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let client = service_directory_client::Client::new(cli.base_url.clone())?;
 
-    match cli.command {
-        Commands::Version => {
-            let v = client.version().await?;
-            if cli.json {
-                println!("{}", serde_json::to_string(&v)?);
-            } else {
-                println!("{}", serde_json::to_string_pretty(&v)?);
+    let value: serde_json::Value = match cli.command {
+        Commands::Version => client.version().await?,
+        Commands::Providers { cmd } => match cmd {
+            ProviderCmd::Search { q, limit, offset } => {
+                client.list_providers(q.as_deref(), Some(limit), Some(offset)).await?
             }
-        }
-        other => {
-            let stub = stub_name(&other);
-            anyhow::bail!(
-                "`{stub}` not yet implemented in Phase 0; profile={}",
-                cli.profile
-            );
-        }
+            ProviderCmd::Get { provider_id } => client.get_provider(&provider_id).await?,
+        },
+        Commands::Descriptors { cmd } => match cmd {
+            DescriptorCmd::Validate { path } => validate_local(&path)?,
+            DescriptorCmd::Get { provider_id, version } => {
+                client.get_descriptor(&provider_id, version).await?
+            }
+        },
+    };
+
+    if cli.json {
+        println!("{}", serde_json::to_string(&value)?);
+    } else {
+        println!("{}", serde_json::to_string_pretty(&value)?);
     }
     Ok(())
 }
 
-fn stub_name(c: &Commands) -> &'static str {
-    match c {
-        Commands::Version => "version",
-        Commands::Providers { .. } => "providers",
-        Commands::Descriptors { .. } => "descriptors",
-        Commands::Comments { .. } => "comments",
-        Commands::Ratings { .. } => "ratings",
-        Commands::Evaluations { .. } => "evaluations",
-        Commands::Auth { .. } => "auth",
-        Commands::Moderation { .. } => "moderation",
-        Commands::Admin { .. } => "admin",
-        Commands::Completions { .. } => "completions",
+fn validate_local(path: &PathBuf) -> anyhow::Result<serde_json::Value> {
+    use service_directory_descriptor_validator::{validate_signed, SignatureError, ValidationError};
+    use service_directory_schemas::ServiceDescriptor;
+
+    let raw = std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+    let descriptor: ServiceDescriptor = serde_json::from_str(&raw)?;
+
+    match validate_signed(&descriptor) {
+        Ok(out) => {
+            let hex = out
+                .payload_hash
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect::<String>();
+            Ok(serde_json::json!({
+                "ok": true,
+                "service_id": descriptor.service_id,
+                "descriptor_version": descriptor.descriptor_version,
+                "payload_hash_sha256": hex,
+                "warnings": out.warnings,
+            }))
+        }
+        Err(ValidationError::Signature(SignatureError::Missing)) => Ok(serde_json::json!({
+            "ok": false,
+            "error": "descriptor is unsigned (provider_signature missing); use seed-fixtures or sign offline",
+        })),
+        Err(e) => Ok(serde_json::json!({
+            "ok": false,
+            "error": format!("{e}"),
+        })),
     }
 }
