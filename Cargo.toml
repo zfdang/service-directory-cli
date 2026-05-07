@@ -14,10 +14,13 @@ service_directory_client = { path = "../service-directory-backend/crates/service
 service_directory_schemas = { path = "../service-directory-backend/crates/service_directory_schemas" }
 service_directory_descriptor_validator = { path = "../service-directory-backend/crates/service_directory_descriptor_validator" }
 clap = { version = "4", features = ["derive", "env"] }
+clap_complete = "4"
 anyhow = "1"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+toml = "0.8"
+dirs = "5"
 url = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
