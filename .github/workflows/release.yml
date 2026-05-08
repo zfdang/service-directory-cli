@@ -77,6 +77,9 @@ jobs:
         with:
           repository: zfdang/service-directory-backend
           path: service-directory-backend
+          # Same secret the cli/ci.yml workflow uses to read the
+          # private backend repo from this CI runner.
+          token: ${{ secrets.SERVICE_DIRECTORY_BACKEND_READ_TOKEN }}
 
       - name: Stage sibling layout
         shell: bash
