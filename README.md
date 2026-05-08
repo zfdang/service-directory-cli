@@ -10,21 +10,44 @@ The CLI is a thin client over the HTTP API exposed by
 It depends on the published `service-directory-client` Rust crate and never
 talks to Postgres or imports private backend crates by path.
 
-## Command shape (planned)
+## Current command surface
 
 ```text
+kitedir version
 kitedir providers search
 kitedir providers get <provider-id>
-kitedir descriptors validate <path-or-url>
-kitedir providers submit <descriptor-path-or-url>
+kitedir providers submit <provider-payload.json>
+kitedir providers endpoints <provider-id>
+kitedir providers payments <provider-id>
+kitedir descriptors validate <descriptor.json>
+kitedir descriptors get <provider-id>
 kitedir comments add <provider-id>
+kitedir comments list <provider-id>
 kitedir ratings add <provider-id>
+kitedir ratings list <provider-id>
 kitedir evaluations add <provider-id>
+kitedir auth login --email <email>
+kitedir auth verify --token <token>
+kitedir auth whoami
+kitedir auth logout
+kitedir auth stepup
 kitedir auth device-flow start
 kitedir auth device-flow poll <device-code>
-kitedir moderation list
-kitedir moderation hide <target-type> <target-id>
-kitedir admin managers invite <email-or-account>
+kitedir auth device-flow approve <user-code>
+kitedir moderation recent-hides
+kitedir moderation action --target-type <type> --target-id <id> --action <action>
+kitedir admin submissions
+kitedir admin review <submission-id>
+kitedir admin audit
+kitedir admin ranking-weights
+kitedir admin managers invite --email <email>
+kitedir admin managers list
+kitedir admin managers revoke <invitation-id>
+kitedir admin force-verify <provider-id> --reason <text>
+kitedir me sessions
+kitedir me revoke-session <session-id>
+kitedir me tokens
+kitedir me revoke-token <token-id>
 kitedir completions {bash|zsh|fish}
 ```
 
