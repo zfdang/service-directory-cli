@@ -1,0 +1,212 @@
+name: Release kitedir
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
+
+permissions:
+  contents: write
+
+jobs:
+  # Compute "vX.Y.Z-<short-sha>" once and re-use across the matrix.
+  compute-tag:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      base_version: ${{ steps.tag.outputs.base }}
+      short_sha: ${{ steps.tag.outputs.short_sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compute release tag
+        id: tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=$(grep -E '^version[[:space:]]*=' Cargo.toml | head -n 1 | sed -E 's/version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/')
+          [ -n "$base" ] || { echo "could not parse version from Cargo.toml" >&2; exit 1; }
+          short_sha=$(git rev-parse --short=7 HEAD)
+          tag="v${base}-${short_sha}"
+          echo "base=${base}"      >> "$GITHUB_OUTPUT"
+          echo "short_sha=${short_sha}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}"        >> "$GITHUB_OUTPUT"
+          echo "Will release as: ${tag}"
+
+  build:
+    needs: compute-tag
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            release_name: kitedir-linux-x86_64
+            use_zigbuild: true
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            release_name: kitedir-linux-arm64
+            use_zigbuild: true
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            release_name: kitedir-macos-x86_64
+            use_zigbuild: false
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            release_name: kitedir-macos-arm64
+            use_zigbuild: false
+
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - name: Checkout CLI repo
+        uses: actions/checkout@v4
+
+      # The CLI's Cargo.toml has path deps on the backend repo; clone it
+      # at the sibling location the manifest expects.
+      - name: Checkout backend repo (sibling)
+        uses: actions/checkout@v4
+        with:
+          repository: zfdang/service-directory-backend
+          path: service-directory-backend
+
+      - name: Stage sibling layout
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The CLI manifest uses `../service-directory-backend/...` — give
+          # it that exact layout by moving the backend one level up.
+          mv service-directory-backend ../service-directory-backend
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install Zig
+        if: ${{ matrix.use_zigbuild }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${{ matrix.target }}" in
+            x86_64-unknown-linux-musl)  zig_target="x86_64-linux"  ;;
+            aarch64-unknown-linux-musl) zig_target="aarch64-linux" ;;
+            *) echo "Unsupported Zig target for ${{ matrix.target }}" >&2; exit 1 ;;
+          esac
+          zig_url="$(python3 -c 'import json,re,sys,urllib.request; zig_target=sys.argv[1]; data=json.load(urllib.request.urlopen("https://ziglang.org/download/index.json")); stable_versions=sorted((version for version in data if re.fullmatch(r"\d+\.\d+\.\d+", version)), key=lambda version: tuple(int(part) for part in version.split(".")), reverse=True); print(data[stable_versions[0]][zig_target]["tarball"])' "$zig_target")"
+          curl -fsSL "$zig_url" -o zig.tar.xz
+          mkdir -p "$RUNNER_TEMP/zig"
+          tar -xJf zig.tar.xz -C "$RUNNER_TEMP/zig" --strip-components=1
+          echo "$RUNNER_TEMP/zig" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/zig/zig" version
+
+      - name: Install cargo-zigbuild
+        if: ${{ matrix.use_zigbuild }}
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-zigbuild
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+
+      - name: Build release binary (cargo)
+        if: ${{ !matrix.use_zigbuild }}
+        env:
+          KITEDIR_GIT_REVISION: ${{ github.sha }}
+        run: cargo build --locked --release --target ${{ matrix.target }} --bin kitedir
+
+      - name: Build release binary (cargo-zigbuild)
+        if: ${{ matrix.use_zigbuild }}
+        env:
+          KITEDIR_GIT_REVISION: ${{ github.sha }}
+        run: cargo zigbuild --locked --release --target ${{ matrix.target }} --bin kitedir
+
+      - name: Package archive
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.compute-tag.outputs.tag }}
+          RELEASE_NAME: ${{ matrix.release_name }}
+        run: |
+          set -euo pipefail
+          dir="${RELEASE_NAME}-${RELEASE_TAG}"
+          mkdir -p "${dir}"
+          cp "target/${{ matrix.target }}/release/kitedir" "${dir}/kitedir"
+          chmod 755 "${dir}/kitedir"
+          tar -czf "${dir}.tar.gz" "${dir}"
+          shasum -a 256 "${dir}.tar.gz" > "${dir}.tar.gz.sha256"
+
+      - name: Upload archive artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: archive-${{ matrix.target }}
+          path: |
+            ${{ matrix.release_name }}-${{ needs.compute-tag.outputs.tag }}.tar.gz
+            ${{ matrix.release_name }}-${{ needs.compute-tag.outputs.tag }}.tar.gz.sha256
+          if-no-files-found: error
+
+  publish:
+    needs: [compute-tag, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all archives
+        uses: actions/download-artifact@v4
+        with:
+          pattern: archive-*
+          merge-multiple: true
+          path: release-artifacts
+
+      - name: Create / update tag
+        env:
+          TAG: ${{ needs.compute-tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Re-create the tag idempotently so retries work.
+          git tag -f "$TAG" "${{ github.sha }}"
+          git push origin "refs/tags/$TAG" --force
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.compute-tag.outputs.tag }}
+          BASE: ${{ needs.compute-tag.outputs.base_version }}
+          SHA: ${{ needs.compute-tag.outputs.short_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Drop a previous release at this tag if any (so re-runs work).
+          gh release delete "$TAG" --yes >/dev/null 2>&1 || true
+          gh release create "$TAG" \
+            --title "kitedir $TAG" \
+            --notes "Automated release from main @ \`${SHA}\` — base version ${BASE}.
+
+Install with:
+
+\`\`\`
+curl -fsSL https://cli.dir.kitepass.xyz/install.sh | sh
+\`\`\`
+
+Or pin this version:
+
+\`\`\`
+KITEDIR_VERSION=$TAG curl -fsSL https://cli.dir.kitepass.xyz/install.sh | sh
+\`\`\`" \
+            release-artifacts/*.*
