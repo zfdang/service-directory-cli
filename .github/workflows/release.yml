@@ -25,7 +25,7 @@ jobs:
       short_sha: ${{ steps.tag.outputs.short_sha }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Compute release tag
         id: tag
@@ -68,12 +68,12 @@ jobs:
 
     steps:
       - name: Checkout CLI repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # The CLI's Cargo.toml has path deps on the backend repo; clone it
       # at the sibling location the manifest expects.
       - name: Checkout backend repo (sibling)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: zfdang/service-directory-backend
           path: service-directory-backend
@@ -146,7 +146,7 @@ jobs:
           shasum -a 256 "${dir}.tar.gz" > "${dir}.tar.gz.sha256"
 
       - name: Upload archive artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: archive-${{ matrix.target }}
           path: |
@@ -161,12 +161,12 @@ jobs:
       contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Download all archives
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           pattern: archive-*
           merge-multiple: true

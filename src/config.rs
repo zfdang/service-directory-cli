@@ -38,7 +38,10 @@ pub fn credentials_path() -> PathBuf {
         return PathBuf::from(p);
     }
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-    home.join(".config").join("kite").join("directory").join("credentials.toml")
+    home.join(".config")
+        .join("kite")
+        .join("directory")
+        .join("credentials.toml")
 }
 
 pub fn load() -> anyhow::Result<CredentialsFile> {
@@ -50,7 +53,7 @@ pub fn load() -> anyhow::Result<CredentialsFile> {
         });
     }
     let body = std::fs::read_to_string(&p).with_context(|| format!("read {}", p.display()))?;
-    Ok(toml::from_str(&body).with_context(|| format!("parse {}", p.display()))?)
+    toml::from_str(&body).with_context(|| format!("parse {}", p.display()))
 }
 
 pub fn save(file: &CredentialsFile) -> anyhow::Result<()> {

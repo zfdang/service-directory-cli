@@ -24,7 +24,12 @@ struct Cli {
     base_url: Option<url::Url>,
 
     /// Profile name in ~/.config/kite/directory/credentials.toml.
-    #[arg(long, env = "KITEDIR_PROFILE", default_value = "default", global = true)]
+    #[arg(
+        long,
+        env = "KITEDIR_PROFILE",
+        default_value = "default",
+        global = true
+    )]
     profile: String,
 
     /// Emit machine-readable JSON.
@@ -147,7 +152,9 @@ enum CommentCmd {
         #[arg(long)]
         rating_snapshot: Option<i16>,
     },
-    List { provider_id: String },
+    List {
+        provider_id: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -157,7 +164,9 @@ enum RatingCmd {
         #[arg(long)]
         score: i16,
     },
-    List { provider_id: String },
+    List {
+        provider_id: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -286,7 +295,9 @@ enum ManagersCmd {
         #[arg(long)]
         status: Option<String>,
     },
-    Revoke { invitation_id: String },
+    Revoke {
+        invitation_id: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -315,7 +326,12 @@ fn build_client(cli: &Cli) -> anyhow::Result<(Client, config::CredentialsFile, c
     let base_url = cli
         .base_url
         .clone()
-        .or_else(|| profile.base_url.as_deref().and_then(|s| url::Url::parse(s).ok()))
+        .or_else(|| {
+            profile
+                .base_url
+                .as_deref()
+                .and_then(|s| url::Url::parse(s).ok())
+        })
         .unwrap_or_else(|| url::Url::parse(DEFAULT_BASE_URL).expect("default base url"));
 
     let mut client = Client::new(base_url)?;
@@ -335,7 +351,10 @@ fn render(json: bool, value: &Value) {
     if json {
         println!("{}", serde_json::to_string(value).unwrap_or_default());
     } else {
-        println!("{}", serde_json::to_string_pretty(value).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(value).unwrap_or_default()
+        );
     }
 }
 
@@ -364,11 +383,14 @@ async fn main() -> anyhow::Result<()> {
         Commands::Version => client.version().await?,
         Commands::Providers { cmd } => match cmd {
             ProviderCmd::Search { q, limit, offset } => {
-                client.list_providers(q.as_deref(), Some(limit), Some(offset)).await?
+                client
+                    .list_providers(q.as_deref(), Some(limit), Some(offset))
+                    .await?
             }
             ProviderCmd::Get { provider_id } => client.get_provider(&provider_id).await?,
             ProviderCmd::Submit { path, notes } => {
-                let raw = std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+                let raw = std::fs::read_to_string(&path)
+                    .with_context(|| format!("read {}", path.display()))?;
                 let payload: Value = serde_json::from_str(&raw)?;
                 let descriptor = payload.get("descriptor").cloned();
                 let mut provider_payload = payload.clone();
@@ -378,24 +400,35 @@ async fn main() -> anyhow::Result<()> {
                 if dry_run {
                     serde_json::json!({"dry_run": true, "provider_payload": provider_payload, "descriptor": descriptor})
                 } else {
-                    client.submit_provider(&provider_payload, descriptor.as_ref(), notes.as_deref()).await?
+                    client
+                        .submit_provider(&provider_payload, descriptor.as_ref(), notes.as_deref())
+                        .await?
                 }
             }
             ProviderCmd::Endpoints { provider_id } => client.list_endpoints(&provider_id).await?,
-            ProviderCmd::Payments { provider_id } => client.get_payment_capabilities(&provider_id).await?,
+            ProviderCmd::Payments { provider_id } => {
+                client.get_payment_capabilities(&provider_id).await?
+            }
         },
         Commands::Descriptors { cmd } => match cmd {
             DescriptorCmd::Validate { path } => validate_local(&path)?,
-            DescriptorCmd::Get { provider_id, version } => {
-                client.get_descriptor(&provider_id, version).await?
-            }
+            DescriptorCmd::Get {
+                provider_id,
+                version,
+            } => client.get_descriptor(&provider_id, version).await?,
         },
         Commands::Comments { cmd } => match cmd {
-            CommentCmd::Add { provider_id, text, rating_snapshot } => {
+            CommentCmd::Add {
+                provider_id,
+                text,
+                rating_snapshot,
+            } => {
                 if dry_run {
                     serde_json::json!({"dry_run": true, "provider_id": provider_id, "comment_text": text, "rating_snapshot": rating_snapshot})
                 } else {
-                    client.add_comment(&provider_id, &text, rating_snapshot).await?
+                    client
+                        .add_comment(&provider_id, &text, rating_snapshot)
+                        .await?
                 }
             }
             CommentCmd::List { provider_id } => client.list_comments(&provider_id).await?,
@@ -414,7 +447,11 @@ async fn main() -> anyhow::Result<()> {
             RatingCmd::List { provider_id } => client.list_ratings(&provider_id).await?,
         },
         Commands::Evaluations { cmd } => match cmd {
-            EvalCmd::Add { provider_id, text, score } => {
+            EvalCmd::Add {
+                provider_id,
+                text,
+                score,
+            } => {
                 let mut out = serde_json::json!({});
                 if let Some(s) = score {
                     if !(1..=5).contains(&s) {
@@ -493,13 +530,20 @@ async fn main() -> anyhow::Result<()> {
             AuthCmd::DeviceFlow { cmd } => match cmd {
                 DeviceFlowCmd::Start { scopes } => {
                     let scopes = if scopes.is_empty() {
-                        vec!["directory:read".into(), "directory:evaluate:authenticated".into()]
+                        vec![
+                            "directory:read".into(),
+                            "directory:evaluate:authenticated".into(),
+                        ]
                     } else {
                         scopes
                     };
                     client.device_flow_start(&scopes).await?
                 }
-                DeviceFlowCmd::Poll { device_code, interval_secs, max_secs } => {
+                DeviceFlowCmd::Poll {
+                    device_code,
+                    interval_secs,
+                    max_secs,
+                } => {
                     let start = std::time::Instant::now();
                     loop {
                         let r = client.device_flow_poll(&device_code).await?;
@@ -528,21 +572,36 @@ async fn main() -> anyhow::Result<()> {
         },
         Commands::Moderation { cmd } => match cmd {
             ModerationCmd::RecentHides { days } => client.admin_recent_hides(days).await?,
-            ModerationCmd::Action { target_type, target_id, action, reason } => {
+            ModerationCmd::Action {
+                target_type,
+                target_id,
+                action,
+                reason,
+            } => {
                 if dry_run {
                     serde_json::json!({"dry_run": true, "target_type": target_type, "target_id": target_id, "action": action})
                 } else {
-                    client.moderation_action(&target_type, &target_id, &action, reason.as_deref()).await?
+                    client
+                        .moderation_action(&target_type, &target_id, &action, reason.as_deref())
+                        .await?
                 }
             }
         },
         Commands::Admin { cmd } => match cmd {
-            AdminCmd::Submissions { state } => client.list_submissions(false, state.as_deref()).await?,
-            AdminCmd::Review { submission_id, action, notes } => {
+            AdminCmd::Submissions { state } => {
+                client.list_submissions(false, state.as_deref()).await?
+            }
+            AdminCmd::Review {
+                submission_id,
+                action,
+                notes,
+            } => {
                 if dry_run {
                     serde_json::json!({"dry_run": true, "submission_id": submission_id, "action": action})
                 } else {
-                    client.review_submission(&submission_id, &action, notes.as_deref()).await?
+                    client
+                        .review_submission(&submission_id, &action, notes.as_deref())
+                        .await?
                 }
             }
             AdminCmd::Audit { after_seq, limit } => client.admin_audit(after_seq, limit).await?,
@@ -563,7 +622,9 @@ async fn main() -> anyhow::Result<()> {
                     }
                 }
                 ManagersCmd::List { status } => {
-                    client.admin_list_manager_invitations(status.as_deref()).await?
+                    client
+                        .admin_list_manager_invitations(status.as_deref())
+                        .await?
                 }
                 ManagersCmd::Revoke { invitation_id } => {
                     let su = client.auth_stepup().await?;
@@ -577,7 +638,10 @@ async fn main() -> anyhow::Result<()> {
                         .await?
                 }
             },
-            AdminCmd::ForceVerify { provider_id, reason } => {
+            AdminCmd::ForceVerify {
+                provider_id,
+                reason,
+            } => {
                 let su = client.auth_stepup().await?;
                 let stepup_token = su
                     .get("stepup_token")
@@ -587,7 +651,9 @@ async fn main() -> anyhow::Result<()> {
                 if dry_run {
                     serde_json::json!({"dry_run": true, "provider_id": provider_id, "reason": reason})
                 } else {
-                    su_client.force_verify_descriptor(&provider_id, &reason).await?
+                    su_client
+                        .force_verify_descriptor(&provider_id, &reason)
+                        .await?
                 }
             }
         },
@@ -611,7 +677,9 @@ async fn main() -> anyhow::Result<()> {
 }
 
 fn validate_local(path: &PathBuf) -> anyhow::Result<Value> {
-    use service_directory_descriptor_validator::{validate_signed, SignatureError, ValidationError};
+    use service_directory_descriptor_validator::{
+        validate_signed, SignatureError, ValidationError,
+    };
     use service_directory_schemas::ServiceDescriptor;
 
     let raw = std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
