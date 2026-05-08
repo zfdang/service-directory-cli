@@ -183,12 +183,26 @@ jobs:
           git tag -f "$TAG" "${{ github.sha }}"
           git push origin "refs/tags/$TAG" --force
 
+      - name: Write release notes
+        env:
+          TAG: ${{ needs.compute-tag.outputs.tag }}
+          BASE: ${{ needs.compute-tag.outputs.base_version }}
+          SHA: ${{ needs.compute-tag.outputs.short_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            printf 'Automated release from main @ `%s` — base version %s.\n\n' "$SHA" "$BASE"
+            printf 'Install with:\n\n'
+            printf '```\ncurl -fsSL https://cli.dir.kitepass.xyz/install.sh | sh\n```\n\n'
+            printf 'Or pin this version:\n\n'
+            printf '```\nKITEDIR_VERSION=%s curl -fsSL https://cli.dir.kitepass.xyz/install.sh | sh\n```\n' "$TAG"
+          } > release-notes.md
+
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.compute-tag.outputs.tag }}
-          BASE: ${{ needs.compute-tag.outputs.base_version }}
-          SHA: ${{ needs.compute-tag.outputs.short_sha }}
         shell: bash
         run: |
           set -euo pipefail
@@ -196,17 +210,5 @@ jobs:
           gh release delete "$TAG" --yes >/dev/null 2>&1 || true
           gh release create "$TAG" \
             --title "kitedir $TAG" \
-            --notes "Automated release from main @ \`${SHA}\` — base version ${BASE}.
-
-Install with:
-
-\`\`\`
-curl -fsSL https://cli.dir.kitepass.xyz/install.sh | sh
-\`\`\`
-
-Or pin this version:
-
-\`\`\`
-KITEDIR_VERSION=$TAG curl -fsSL https://cli.dir.kitepass.xyz/install.sh | sh
-\`\`\`" \
+            --notes-file release-notes.md \
             release-artifacts/*.*
