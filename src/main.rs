@@ -710,3 +710,74 @@ fn validate_local(path: &PathBuf) -> anyhow::Result<Value> {
         })),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::{CommandFactory, Parser};
+
+    #[test]
+    fn clap_command_tree_is_valid() {
+        Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn parses_provider_submit_command_with_notes() {
+        let cli = Cli::try_parse_from([
+            "kitedir",
+            "--json",
+            "providers",
+            "submit",
+            "provider.json",
+            "--notes",
+            "descriptor ready",
+        ])
+        .expect("provider submit command should parse");
+
+        assert!(cli.json);
+        match cli.command {
+            Commands::Providers {
+                cmd:
+                    ProviderCmd::Submit {
+                        path,
+                        notes,
+                    },
+            } => {
+                assert_eq!(path, PathBuf::from("provider.json"));
+                assert_eq!(notes.as_deref(), Some("descriptor ready"));
+            }
+            _ => panic!("expected providers submit command"),
+        }
+    }
+
+    #[test]
+    fn parses_admin_review_command() {
+        let cli = Cli::try_parse_from([
+            "kitedir",
+            "admin",
+            "review",
+            "sub_123",
+            "--action",
+            "approve",
+            "--notes",
+            "looks good",
+        ])
+        .expect("admin review command should parse");
+
+        match cli.command {
+            Commands::Admin {
+                cmd:
+                    AdminCmd::Review {
+                        submission_id,
+                        action,
+                        notes,
+                    },
+            } => {
+                assert_eq!(submission_id, "sub_123");
+                assert_eq!(action, "approve");
+                assert_eq!(notes.as_deref(), Some("looks good"));
+            }
+            _ => panic!("expected admin review command"),
+        }
+    }
+}
